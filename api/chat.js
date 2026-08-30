@@ -1,4 +1,4 @@
-// pages/api/chat.js (or api/chat.js — same path you already have this file at)
+// pages/api/chat.js
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -20,8 +20,6 @@ export default async function handler(req, res) {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // ১. ইউজার প্রশ্নের Vector তৈরি
-    // gemini-embedding-001 ব্যবহার করা হচ্ছে (text-embedding-004 deprecated হয়ে গেছে)
-    // documents টেবিল vector(3072) দিয়ে বানানো, তাই এখানেও একই মডেল দরকার
     const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
     const embedRes = await fetch(embedUrl, {
       method: 'POST',
@@ -29,7 +27,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: "models/gemini-embedding-001",
         content: { parts: [{ text: query }] },
-        taskType: "RETRIEVAL_QUERY" // ডকুমেন্টগুলো RETRIEVAL_DOCUMENT দিয়ে embed করা হয়েছিল, query-এর জন্য RETRIEVAL_QUERY ব্যবহার করলে ম্যাচিং কোয়ালিটি ভালো হয়
+        taskType: "RETRIEVAL_QUERY"
       })
     });
 
