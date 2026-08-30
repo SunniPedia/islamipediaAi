@@ -1,13 +1,17 @@
 {
   "name": "islami-pedia-ai",
   "private": true,
-  "scripts": { "dev": "next dev", "build": "next build", "start": "next start" },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
   "dependencies": {
     "next": "14.2.35",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "@supabase/supabase-js": "^2.45.0",
-    "@google/generative-ai": "^0.17.0"
+    "@google/genai": "^0.1.1"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.1",
