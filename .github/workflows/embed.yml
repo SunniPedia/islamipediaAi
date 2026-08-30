@@ -1,7 +1,7 @@
 name: Delete all except index.html
 
 on:
-  workflow_dispatch: # tumi manually run korte parba
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,17 +15,15 @@ jobs:
 
       - name: Delete everything except index.html
         run: |
-          #.git ebong.github folder bad diye shob delete
-          find. -mindepth 1 -maxdepth 1! -name 'index.html'! -name '.git'! -name '.github' -exec rm -rf {} +
-
-          # vitorer folder gular moddhe ki ache check koro
+          # root er shob file/folder list korbo index.html bad diye
+          shopt -s extglob
+          rm -rf!\(index.html\|.git\|.github\)
           ls -la
 
       - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
           git add -A
           if git diff --staged --quiet; then
             echo "Delete korar moto kichu nai"
