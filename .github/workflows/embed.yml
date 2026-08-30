@@ -31,8 +31,6 @@ jobs:
           const { GoogleGenerativeAI } = require("@google/generative-ai");
           const fs = require("fs");
 
-          // trim() guards against trailing newline/space in GitHub Secrets,
-          // which causes "Invalid path specified in request URL"
           const SUPABASE_URL = (process.env.SUPABASE_URL || "").trim();
           const SUPABASE_KEY = (process.env.SUPABASE_KEY || "").trim();
           const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
@@ -67,13 +65,16 @@ jobs:
 
               console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
 
-              // deprecated embedding-001/text-embedding-004 replaced with gemini-embedding-001
+              // gemini-embedding-001: native output is 3072 dims,
+              // matches the documents.embedding column (vector(3072))
               const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
               for (let i = 0; i < chunks.length; i++) {
                 const chunkText = chunks[i];
 
-                const result = await model.embedContent(chunkText);
+                const result = await model.embedContent(chunkText, {
+                  taskType: "RETRIEVAL_DOCUMENT"
+                });
                 const embedding = result.embedding.values;
 
                 const { error } = await supabase.from("documents").insert({
