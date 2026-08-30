@@ -1,0 +1,103 @@
+name: Upload Data to Supabase
+on:
+  workflow_dispatch:
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Dependencies
+        run: |
+          npm init -y
+          npm install @supabase/supabase-js @google/generative-ai
+      - name: Run Inline Upload Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          node -e '
+          const { createClient } = require("@supabase/supabase-js");
+          const { GoogleGenerativeAI } = require("@google/generative-ai");
+          const fs = require("fs");
+
+          const SUPABASE_URL = (process.env.SUPABASE_URL || "").trim();
+          const SUPABASE_KEY = (process.env.SUPABASE_KEY || "").trim();
+          const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
+
+          if (!SUPABASE_URL || !SUPABASE_KEY || !GEMINI_API_KEY) {
+            console.error("❌ Error: GitHub Secrets সঠিকভাবে সেট করা নেই!");
+            process.exit(1);
+          }
+
+          const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: { persistSession: false },
+            realtime: { enabled: false }
+          });
+
+          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function run() {
+            let hadError = false;
+            try {
+              console.log("JSON ফাইল পড়া শুরু হচ্ছে...");
+              const filePath = "data/your_data.json";
+              if (!fs.existsSync(filePath)) {
+                throw new Error(`ফাইল পাওয়া যায়নি: ${filePath}`);
+              }
+
+              const fileContent = fs.readFileSync(filePath, "utf8");
+              const jsonData = JSON.parse(fileContent);
+
+              const items = Array.isArray(jsonData) ? jsonData : [jsonData];
+
+              console.log(`মোট ${items.length} টি JSON অবজেক্ট পাওয়া গেছে। প্রসেস শুরু হচ্ছে...`);
+
+              const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+
+              for (let i = 0; i < items.length; i++) {
+                const obj = items[i];
+                
+                const combinedText = Object.values(obj).join(" ");
+                if (!combinedText.trim()) continue;
+
+                const result = await model.embedContent(combinedText, {
+                  taskType: "RETRIEVAL_DOCUMENT"
+                });
+                const embedding = result.embedding.values;
+
+                const { error } = await supabase.from("documents").insert({
+                  content: combinedText,
+                  embedding: embedding
+                });
+
+                if (error) {
+                  hadError = true;
+                  console.error(`অবজেক্ট ${i + 1} আপলোডে সমস্যা:`, error.message);
+                } else {
+                  console.log(`✓ অবজেক্ট ${i + 1}/${items.length} সেভ হয়েছে: "${combinedText}"`);
+                }
+
+                await sleep(1500);
+              }
+
+              if (hadError) {
+                console.error("⚠️ কিছু ডাটা আপলোড ব্যর্থ হয়েছে।");
+                process.exit(1);
+              }
+
+              console.log("🎉 সব JSON অবজেক্ট সফলভাবে Supabase-এ আপলোড হয়ে গেছে!");
+            } catch (err) {
+              console.error("পদ্ধতিতে সমস্যা:", err.message);
+              process.exit(1);
+            }
+          }
+
+          run();
+          '
