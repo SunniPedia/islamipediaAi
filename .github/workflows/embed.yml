@@ -18,7 +18,7 @@ jobs:
       - name: Install Dependencies
         run: |
           npm init -y
-          npm install @supabase/supabase-js @google/generative-ai
+          npm install @supabase/supabase-js @google/generative-ai ws
 
       - name: Run Upload Script
         env:
