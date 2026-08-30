@@ -1,4 +1,4 @@
-///api/chat.js
+// pages/api/chat.js
 //
 // Streaming RAG endpoint for islamiPedia AI.
 //
@@ -39,7 +39,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Shown when the failure looks like an API/usage quota limit being hit.
 const LIMIT_MESSAGE =
-  'আমাদের সার্ভার সীমিত থাকাতে সমস্যাটি দিচ্ছি। ইসলামী পিডিয়া এ আই-কে সমৃদ্ধ করতে অনুদান দিয়ে সহযোগিতা করুন।\n\n' +
+  'আমাদের সার্ভার সীমিত থাকাতে সমস্যাটি দিচ্ছে। ইসলামী পিডিয়া এ আই-কে সমৃদ্ধ করতে অনুদান দিয়ে সহযোগিতা করুন।\n\n' +
   '**বিকাশ (পার্সোনাল):** 01537144153';
 
 // Shown for any other, non-quota failure. Kept generic/non-technical on purpose.
@@ -155,8 +155,11 @@ export default async function handler(req, res) {
         contents: [{ role: 'user', parts: [{ text: query }] }],
         systemInstruction: {
           parts: [{
-  text: `You are islamiPediaAI. Answer the question from the database. Format: **bold**, -bullets, > Quran/Hadith. If not found, say 'not available'.`
-}]
+            text: `আপনি একটি ইসলামিক এআই সহকারী (islamiPediaAI)। নিচে দেওয়া [প্রাসঙ্গিক তথ্যভাণ্ডার] থেকে প্রশ্নের সঠিক উত্তর দিন। উত্তর স্পষ্ট রাখতে প্রয়োজনে **বোল্ড টেক্সট**, বুলেট লিস্ট (- আইটেম) এবং কুরআন/হাদিসের উদ্ধৃতির জন্য "> " দিয়ে শুরু করা ব্লককোট ব্যবহার করুন। তথ্য না পাওয়া গেলে বিনীতভাবে বলুন যে আপনার ডাটাবেজে এই তথ্যটি নেই।
+
+            [তথ্যভাণ্ডার]:
+            ${contextData || 'কোনো প্রাসঙ্গিক তথ্য পাওয়া যায়নি।'}`
+          }]
         }
       })
     });
