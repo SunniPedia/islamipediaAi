@@ -31,11 +31,12 @@ jobs:
           const { GoogleGenerativeAI } = require("@google/generative-ai");
           const fs = require("fs");
 
-          const SUPABASE_URL = process.env.SUPABASE_URL;
-          const SUPABASE_KEY = process.env.SUPABASE_KEY;
-          const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+          // trim() guards against trailing newline/space in GitHub Secrets,
+          // which causes "Invalid path specified in request URL"
+          const SUPABASE_URL = (process.env.SUPABASE_URL || "").trim();
+          const SUPABASE_KEY = (process.env.SUPABASE_KEY || "").trim();
+          const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
 
-          // Secrets চেক করা
           if (!SUPABASE_URL || !SUPABASE_KEY || !GEMINI_API_KEY) {
             console.error("❌ Error: GitHub Secrets (GEMINI_API_KEY, SUPABASE_URL, SUPABASE_KEY) সঠিকভাবে সেট করা নেই!");
             process.exit(1);
@@ -50,26 +51,28 @@ jobs:
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
           async function run() {
+            let hadError = false;
+
             try {
-              console.log("ডাটা ফাইল পড়া শুরু হচ্ছে...");
-              
+              console.log("ডাটা ফাইল পড়া শুরু হচ্ছে...");
+
               const filePath = "data/your_file.txt";
-              
+
               if (!fs.existsSync(filePath)) {
-                throw new Error(`ফাইল পাওয়া যায়নি: ${filePath}`);
+                throw new Error(`ফাইল পাওয়া যায়নি: ${filePath}`);
               }
 
               const text = fs.readFileSync(filePath, "utf8");
               const chunks = text.split("\n\n").filter(c => c.trim().length > 0);
 
-              console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
+              console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
 
-              // ইউনিভার্সাল স্টেবল মডেল embedding-001 ব্যবহার করা হলো
+              // deprecated embedding-001/text-embedding-004 replaced with gemini-embedding-001
               const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
               for (let i = 0; i < chunks.length; i++) {
                 const chunkText = chunks[i];
-                
+
                 const result = await model.embedContent(chunkText);
                 const embedding = result.embedding.values;
 
@@ -79,15 +82,21 @@ jobs:
                 });
 
                 if (error) {
+                  hadError = true;
                   console.error(`প্যারাগ্রাফ ${i + 1} আপলোডে সমস্যা:`, error.message);
                 } else {
-                  console.log(`✓ প্যারাগ্রাফ ${i + 1}/${chunks.length} সেভ হয়েছে!`);
+                  console.log(`✓ প্যারাগ্রাফ ${i + 1}/${chunks.length} সেভ হয়েছে!`);
                 }
 
-                // Rate limit এড়াতে ১.৫ সেকেন্ড বিরতি
                 await sleep(1500);
               }
-              console.log("🎉 সব ডাটা সফলভাবে Supabase-এ আপলোড হয়ে গেছে!");
+
+              if (hadError) {
+                console.error("⚠️ কিছু প্যারাগ্রাফ আপলোড ব্যর্থ হয়েছে। উপরের লগ দেখুন।");
+                process.exit(1);
+              }
+
+              console.log("🎉 সব ডাটা সফলভাবে Supabase-এ আপলোড হয়ে গেছে!");
             } catch (err) {
               console.error("পদ্ধতিতে সমস্যা:", err.message);
               process.exit(1);
