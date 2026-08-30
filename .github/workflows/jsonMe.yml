@@ -1,0 +1,213 @@
+name: Upload Data to Supabase
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # GitHub Actions max 360 min (6hr) এর কাছাকাছি, safety margin রেখে
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Dependencies
+        run: |
+          npm init -y
+          npm install @supabase/supabase-js @google/generative-ai
+
+      - name: Run Inline Upload Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          node -e '
+          const { createClient } = require("@supabase/supabase-js");
+          const { GoogleGenerativeAI } = require("@google/generative-ai");
+          const fs = require("fs");
+
+          const SUPABASE_URL = (process.env.SUPABASE_URL || "").trim();
+          const SUPABASE_KEY = (process.env.SUPABASE_KEY || "").trim();
+          const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || "").trim();
+
+          if (!SUPABASE_URL || !SUPABASE_KEY || !GEMINI_API_KEY) {
+            console.error("❌ Error: GitHub Secrets সঠিকভাবে সেট করা নেই!");
+            process.exit(1);
+          }
+
+          const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: { persistSession: false },
+            realtime: { enabled: false }
+          });
+
+          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          // ---- Token-aware rate limit settings ----
+          const TPM_LIMIT = 28000;       // 30K এর নিচে safety margin রেখে
+          const RPM_LIMIT = 90;          // 100 এর নিচে safety margin
+          const BASE_DELAY_MS = 1500;    // প্রতি request-এর মাঝে ন্যূনতম delay
+          const CHUNK_SIZE = 50;         // একবারে কতগুলো object প্রসেস হবে তারপর progress সেভ হবে
+          const PROGRESS_FILE = "upload_progress.json";
+
+          let tokensUsedThisMinute = 0;
+          let requestsThisMinute = 0;
+          let minuteStart = Date.now();
+
+          function estimateTokens(text) {
+            return Math.ceil(text.length / 4); // rough estimate
+          }
+
+          async function throttle(estTokens) {
+            if (Date.now() - minuteStart > 60000) {
+              minuteStart = Date.now();
+              tokensUsedThisMinute = 0;
+              requestsThisMinute = 0;
+            }
+
+            if (
+              tokensUsedThisMinute + estTokens > TPM_LIMIT ||
+              requestsThisMinute + 1 > RPM_LIMIT
+            ) {
+              const waitMs = 60000 - (Date.now() - minuteStart);
+              if (waitMs > 0) {
+                console.log(`⏳ Rate limit এড়াতে ${Math.ceil(waitMs / 1000)}s wait করা হচ্ছে...`);
+                await sleep(waitMs);
+              }
+              minuteStart = Date.now();
+              tokensUsedThisMinute = 0;
+              requestsThisMinute = 0;
+            }
+          }
+
+          async function embedWithRetry(model, text, retries = 5) {
+            for (let attempt = 0; attempt < retries; attempt++) {
+              try {
+                return await model.embedContent(text, { taskType: "RETRIEVAL_DOCUMENT" });
+              } catch (err) {
+                const is429 = err.message && (err.message.includes("429") || err.message.includes("RESOURCE_EXHAUSTED"));
+                if (is429 && attempt < retries - 1) {
+                  const wait = Math.pow(2, attempt) * 3000;
+                  console.log(`⚠️ 429/RESOURCE_EXHAUSTED পেয়েছি, ${wait / 1000}s পরে retry (attempt ${attempt + 1})...`);
+                  await sleep(wait);
+                } else {
+                  throw err;
+                }
+              }
+            }
+          }
+
+          function loadProgress() {
+            if (fs.existsSync(PROGRESS_FILE)) {
+              try {
+                const data = JSON.parse(fs.readFileSync(PROGRESS_FILE, "utf8"));
+                return data.lastIndex || 0;
+              } catch {
+                return 0;
+              }
+            }
+            return 0;
+          }
+
+          function saveProgress(index) {
+            fs.writeFileSync(PROGRESS_FILE, JSON.stringify({ lastIndex: index }));
+          }
+
+          async function run() {
+            let hadError = false;
+            try {
+              console.log("JSON ফাইল পড়া শুরু হচ্ছে...");
+              const filePath = "data/your_data.json";
+              if (!fs.existsSync(filePath)) {
+                throw new Error(`ফাইল পাওয়া যায়নি: ${filePath}`);
+              }
+
+              const fileContent = fs.readFileSync(filePath, "utf8");
+              const jsonData = JSON.parse(fileContent);
+              const items = Array.isArray(jsonData) ? jsonData : [jsonData];
+
+              console.log(`মোট ${items.length} টি JSON অবজেক্ট পাওয়া গেছে। প্রসেস শুরু হচ্ছে...`);
+
+              const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+
+              // আগের run থেকে progress থাকলে সেখান থেকে শুরু হবে (resume support)
+              let startIndex = loadProgress();
+              if (startIndex > 0) {
+                console.log(`▶️ আগের progress পাওয়া গেছে, ইনডেক্স ${startIndex} থেকে আবার শুরু হচ্ছে...`);
+              }
+
+              for (let i = startIndex; i < items.length; i++) {
+                const obj = items[i];
+                const combinedText = Object.values(obj).join(" ");
+
+                if (!combinedText.trim()) {
+                  saveProgress(i + 1);
+                  continue;
+                }
+
+                const estTokens = estimateTokens(combinedText);
+                await throttle(estTokens);
+
+                try {
+                  const result = await embedWithRetry(model, combinedText);
+                  const embedding = result.embedding.values;
+
+                  const { error } = await supabase.from("documents").insert({
+                    content: combinedText,
+                    embedding: embedding
+                  });
+
+                  if (error) {
+                    hadError = true;
+                    console.error(`অবজেক্ট ${i + 1} আপলোডে সমস্যা:`, error.message);
+                  } else {
+                    console.log(`✓ অবজেক্ট ${i + 1}/${items.length} সেভ হয়েছে: "${combinedText}"`);
+                  }
+                } catch (err) {
+                  hadError = true;
+                  console.error(`অবজেক্ট ${i + 1} embed/upload-এ ব্যর্থ:`, err.message);
+                }
+
+                tokensUsedThisMinute += estTokens;
+                requestsThisMinute += 1;
+
+                saveProgress(i + 1);
+
+                // প্রতি CHUNK_SIZE object পরপর status log
+                if ((i + 1) % CHUNK_SIZE === 0) {
+                  console.log(`📦 Chunk সম্পন্ন: ${i + 1}/${items.length} প্রসেস হয়েছে।`);
+                }
+
+                await sleep(BASE_DELAY_MS);
+              }
+
+              if (hadError) {
+                console.error("⚠️ কিছু ডাটা আপলোড ব্যর্থ হয়েছে। পরের run-এ progress থেকে resume হবে না এমন object গুলো আবার try হবে না, কারণ progress index এগিয়ে গেছে। প্রয়োজনে manually চেক করুন।");
+                process.exit(1);
+              }
+
+              // সব সফল হলে progress ফাইল মুছে ফেলা হচ্ছে
+              if (fs.existsSync(PROGRESS_FILE)) fs.unlinkSync(PROGRESS_FILE);
+
+              console.log("🎉 সব JSON অবজেক্ট সফলভাবে Supabase-এ আপলোড হয়ে গেছে!");
+            } catch (err) {
+              console.error("পদ্ধতিতে সমস্যা:", err.message);
+              process.exit(1);
+            }
+          }
+
+          run();
+          '
+
+      - name: Upload progress file (resume support)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-progress
+          path: upload_progress.json
+          if-no-files-found: ignore
