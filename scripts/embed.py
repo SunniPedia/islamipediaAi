@@ -17,7 +17,8 @@ def chunk_text(text, size=500):
 for filepath in glob.glob("data/*.txt"):
     print(f"Processing {filepath}")
     with open(filepath, "r", encoding="utf-8") as f:
-        for chunk in chunk_text(f.read()):
+        text = f.read()
+        for chunk in chunk_text(text):
             if not chunk.strip(): continue
             result = client.models.embed_content(
                 model="text-embedding-004",
