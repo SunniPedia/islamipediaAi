@@ -6,7 +6,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Realtime ও AutoRefreshToken বন্ধ রাখা হয়েছে যাতে WebSocket না লাগে
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false },
+  realtime: { enabled: false }
+});
+
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 async function run() {
@@ -18,13 +23,11 @@ async function run() {
   // প্যারাগ্রাফ অনুযায়ী ভাগ করা
   const chunks = text.split("\n\n").filter(c => c.trim().length > 0);
 
-  // Embedding Model কল করা (মডেল নেম সঠিক ফরম্যাটে)
   const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
 
   for (let i = 0; i < chunks.length; i++) {
     const chunkText = chunks[i];
     
-    // SDK অনুযায়ী সঠিক পেলোড স্ট্রাকচার
     const result = await model.embedContent({
       content: { parts: [{ text: chunkText }] }
     });
