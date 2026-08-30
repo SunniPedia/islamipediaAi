@@ -1,79 +1,70 @@
-// api/chat.js
+import { createClient } from '@supabase/supabase-js';
+
 export default async function handler(req, res) {
-  // শুধুমাত্র POST রিকোয়েস্ট অ্যালাউ করা হবে
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
     const { query } = req.body;
+    if (!query) return res.status(400).json({ error: 'প্রশ্ন লিখুন।' });
 
-    if (!query) {
-      return res.status(400).json({ error: 'দয়া করে প্রশ্ন লিখুন।' });
-    }
-
-    // ১. গিটহাব থেকে সরাসরি আপনার txt ফাইলের Raw Data ফেচ (Fetch) করুন
-    const githubRawUrl = "https://raw.githubusercontent.com/SunniPedia/islamipediaAi/main/data/your_file.txt"; 
-    // ⚠️ আপনার আসল txt ফাইলের নাম অনুযায়ী 'your_file.txt' পরিবর্তন করুন
-
-    const fileRes = await fetch(githubRawUrl);
-    
-    if (!fileRes.ok) {
-      throw new Error("গিটহাব থেকে ডাটা ফাইল লোড করা সম্ভব হয়নি।");
-    }
-
-    const contextData = await fileRes.text();
-
-    // ২. Vercel Environment Variable থেকে API Key নেওয়া
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY সেট করা নেই।' });
-    }
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_KEY;
 
-    // ৩. Gemini 2.5 Flash-Lite REST Endpoint কল
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const geminiRes = await fetch(apiUrl, {
+    // ১. ইউজার প্রশ্নের Vector তৈরি
+    const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
+    const embedRes = await fetch(embedUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: query }]
-          }
-        ],
+        model: "models/text-embedding-004",
+        content: { parts: [{ text: query }] }
+      })
+    });
+    const embedData = await embedRes.json();
+    const queryEmbedding = embedData.embedding?.values;
+
+    if (!queryEmbedding) throw new Error("Embedding তৈরি করা যায়নি।");
+
+    // ২. Supabase থেকে সেরা ৩টি প্রাসঙ্গিক প্যারাগ্রাফ বের করা
+    const { data: matchedDocs, error: matchError } = await supabase.rpc('match_documents', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.3,
+      match_count: 3
+    });
+
+    if (matchError) throw matchError;
+
+    const contextData = matchedDocs.map(doc => doc.content).join("\n\n---\n\n");
+
+    // ৩. gemini-3.5-flash-lite মডেলে ডাটা পাঠানো
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
+    
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: query }] }],
         systemInstruction: {
-          parts: [
-            {
-              text: `আপনি একটি অত্যন্ত সুনির্দিষ্ট ও মার্জিত ইসলামিক এআই সহকারী (islamiPediaAI)। আপনার প্রধান দায়িত্ব নিচে দেওয়া [তথ্য ভাণ্ডার] থেকে সঠিক উত্তর প্রদান করা। 
+          parts: [{
+            text: `আপনি একটি ইসলামিক এআই সহকারী (islamiPediaAI)। নিচে দেওয়া [প্রাসঙ্গিক তথ্যভাণ্ডার] থেকে প্রশ্নের সঠিক উত্তর দিন। তথ্য না পাওয়া গেলে বিনীতভাবে বলুন যে আপনার ডাটাবেজে এই তথ্যটি নেই।
 
-নিয়মাবলী:
-১. শুধুমাত্র দেওয়া [তথ্য ভাণ্ডার]-এর তথ্যের উপর ভিত্তি করে প্রশ্নের উত্তর দিন।
-২. যদি প্রশ্নটির উত্তর এই তথ্য ভাণ্ডারে না থাকে, তবে বিনীতভাবে বাংলা ভাষায় বলুন যে এই সংক্রান্ত তথ্য আপনার ডাটাবেজে পাওয়া যায়নি।
-৩. নিজ থেকে মনগড়া বা বানিয়ে কোনো উত্তর দেবেন না।
-৪. উত্তর সবসময় সহজ, স্পষ্ট ও সুন্দর বাংলায় গুছিয়ে লিখুন।
-
-[তথ্য ভাণ্ডার]:
-${contextData}`
-            }
-          ]
+            [প্রাসঙ্গিক তথ্যভাণ্ডার]:
+            ${contextData || "কোনো প্রাসঙ্গিক তথ্য পাওয়া যায়নি।"}`
+          }]
         }
       })
     });
 
-    const data = await geminiRes.json();
-
-    if (data.error) {
-      throw new Error(data.error.message || "Gemini API থেকে সমস্যা দেখা দিয়েছে।");
-    }
-
-    const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "কোনো উত্তর পাওয়া যায়নি।";
+    const geminiData = await geminiRes.json();
+    const answer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "উত্তর তৈরি করা সম্ভব হয়নি।";
 
     return res.status(200).json({ answer });
 
   } catch (error) {
-    console.error("API Error:", error);
+    console.error("RAG Error:", error);
     return res.status(500).json({ error: error.message || "সার্ভারে সমস্যা হয়েছে।" });
   }
 }
