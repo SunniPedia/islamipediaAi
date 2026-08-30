@@ -15,7 +15,7 @@ jobs:
 
       - name: Delete everything except index.html
         run: |
-          find. -mindepth 1 -maxdepth 1! -name 'index.html'! -name '.git'! -name '.github' -exec rm -rf {} +
+          find . -mindepth 1 -maxdepth 1 ! -name 'index.html' ! -name '.git' ! -name '.github' -exec rm -rf {} +
           ls -la
 
       - name: Commit and push changes
