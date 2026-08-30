@@ -1,18 +1,35 @@
-name: Auto Embed Docs
+name: Delete all except index.html
+
 on:
-  push:
-    paths: ['data/**']
+  workflow_dispatch: # tumi manually run korte parba
+
+permissions:
+  contents: write
+
 jobs:
-  embed:
+  clean:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
-        with: { python-version: '3.11' }
-      - run: pip install supabase google-genai
-      - name: Embed to Supabase
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python scripts/embed.py
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Delete everything except index.html
+        run: |
+          #.git ebong.github folder bad diye shob delete
+          find. -mindepth 1 -maxdepth 1! -name 'index.html'! -name '.git'! -name '.github' -exec rm -rf {} +
+
+          # vitorer folder gular moddhe ki ache check koro
+          ls -la
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Delete korar moto kichu nai"
+          else
+            git commit -m "Deleted all files except index.html"
+            git push
+          fi
