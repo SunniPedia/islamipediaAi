@@ -65,7 +65,7 @@ jobs:
               console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
 
               // ইউনিভার্সাল স্টেবল মডেল embedding-001 ব্যবহার করা হলো
-              const model = genAI.getGenerativeModel({ model: "gemini-embedding-002" });
+              const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
               for (let i = 0; i < chunks.length; i++) {
                 const chunkText = chunks[i];
