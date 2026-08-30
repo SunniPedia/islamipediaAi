@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     }
 
     // ৩. Gemini 2.5 Flash-Lite REST Endpoint কল
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
 
     const geminiRes = await fetch(apiUrl, {
       method: 'POST',
