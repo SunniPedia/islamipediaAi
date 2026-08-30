@@ -40,13 +40,16 @@ jobs:
             realtime: { enabled: false }
           });
 
+          // API Options সেট করা হয়েছে যাতে v1beta API রাউটিং সঠিকভাবে হয়
           const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+          // Rate limit এড়াতে ডিলে ফাংশন
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
           async function run() {
             try {
               console.log("ডাটা ফাইল পড়া শুরু হচ্ছে...");
               
-              // আপনার ডাটা ফাইলের পাথ
               const filePath = "data/your_file.txt";
               
               if (!fs.existsSync(filePath)) {
@@ -58,13 +61,13 @@ jobs:
 
               console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
 
-              // models/ প্রিপিক্স যুক্ত করে মডেল সিলেক্ট করা হয়েছে
-              const model = genAI.getGenerativeModel({ model: "models/text-embedding-004" });
+              // text-embedding-004 সঠিক মডেলে কল করা
+              const model = genAI.getGenerativeModel({ model: "text-embedding-004" }, { apiVersion: "v1beta" });
 
               for (let i = 0; i < chunks.length; i++) {
                 const chunkText = chunks[i];
                 
-                // embedContent-এ সরাসরি টেক্সট পাস করা
+                // Embed Content Call
                 const result = await model.embedContent(chunkText);
                 const embedding = result.embedding.values;
 
@@ -78,6 +81,9 @@ jobs:
                 } else {
                   console.log(`✓ প্যারাগ্রাফ ${i + 1}/${chunks.length} সেভ হয়েছে!`);
                 }
+
+                // Rate limit (Quota limit) এড়াতে প্রতি রিকোয়েস্টের পর ১.৫ সেকেন্ডের পজ/ব্রেক
+                await sleep(1500);
               }
               console.log("🎉 সব ডাটা সফলভাবে Supabase-এ আপলোড হয়ে গেছে!");
             } catch (err) {
