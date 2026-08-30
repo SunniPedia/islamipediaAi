@@ -46,7 +46,7 @@ jobs:
             try {
               console.log("ডাটা ফাইল পড়া শুরু হচ্ছে...");
               
-              // আপনার ফাইল পাথ (দরকার হলে আপনার ফাইল অনুযায়ী পাথ পরিবর্তন করতে পারেন)
+              // আপনার ডাটা ফাইলের পাথ
               const filePath = "data/your_file.txt";
               
               if (!fs.existsSync(filePath)) {
@@ -58,15 +58,14 @@ jobs:
 
               console.log(`মোট ${chunks.length} টি প্যারাগ্রাফ পাওয়া গেছে। ভেক্টর তৈরি হচ্ছে...`);
 
-              const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+              // models/ প্রিপিক্স যুক্ত করে মডেল সিলেক্ট করা হয়েছে
+              const model = genAI.getGenerativeModel({ model: "models/text-embedding-004" });
 
               for (let i = 0; i < chunks.length; i++) {
                 const chunkText = chunks[i];
                 
-                const result = await model.embedContent({
-                  content: { parts: [{ text: chunkText }] }
-                });
-                
+                // embedContent-এ সরাসরি টেক্সট পাস করা
+                const result = await model.embedContent(chunkText);
                 const embedding = result.embedding.values;
 
                 const { error } = await supabase.from("documents").insert({
