@@ -1,0 +1,12 @@
+{
+  "name": "islamipedia-ai",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "upload": "node scripts/upload.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "@google/generative-ai": "^0.21.0"
+  }
+}
