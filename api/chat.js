@@ -1,3 +1,5 @@
+// pages/api/chat.js (or api/chat.js — same path you already have this file at)
+
 import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
@@ -11,22 +13,33 @@ export default async function handler(req, res) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_KEY;
 
+    if (!apiKey || !supabaseUrl || !supabaseKey) {
+      throw new Error('সার্ভার Environment Variables ঠিকভাবে সেট করা নেই।');
+    }
+
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // ১. ইউজার প্রশ্নের Vector তৈরি
-    const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`;
+    // gemini-embedding-001 ব্যবহার করা হচ্ছে (text-embedding-004 deprecated হয়ে গেছে)
+    // documents টেবিল vector(3072) দিয়ে বানানো, তাই এখানেও একই মডেল দরকার
+    const embedUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`;
     const embedRes = await fetch(embedUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: "models/text-embedding-004",
-        content: { parts: [{ text: query }] }
+        model: "models/gemini-embedding-001",
+        content: { parts: [{ text: query }] },
+        taskType: "RETRIEVAL_QUERY" // ডকুমেন্টগুলো RETRIEVAL_DOCUMENT দিয়ে embed করা হয়েছিল, query-এর জন্য RETRIEVAL_QUERY ব্যবহার করলে ম্যাচিং কোয়ালিটি ভালো হয়
       })
     });
+
     const embedData = await embedRes.json();
     const queryEmbedding = embedData.embedding?.values;
 
-    if (!queryEmbedding) throw new Error("Embedding তৈরি করা যায়নি।");
+    if (!queryEmbedding) {
+      console.error("Embed API response:", JSON.stringify(embedData));
+      throw new Error("Embedding তৈরি করা যায়নি।");
+    }
 
     // ২. Supabase থেকে সেরা ৩টি প্রাসঙ্গিক প্যারাগ্রাফ বের করা
     const { data: matchedDocs, error: matchError } = await supabase.rpc('match_documents', {
@@ -35,13 +48,16 @@ export default async function handler(req, res) {
       match_count: 3
     });
 
-    if (matchError) throw matchError;
+    if (matchError) {
+      console.error("Supabase match_documents error:", matchError);
+      throw matchError;
+    }
 
-    const contextData = matchedDocs.map(doc => doc.content).join("\n\n---\n\n");
+    const contextData = (matchedDocs || []).map(doc => doc.content).join("\n\n---\n\n");
 
     // ৩. gemini-3.5-flash-lite মডেলে ডাটা পাঠানো
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`;
-    
+
     const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -49,22 +65,27 @@ export default async function handler(req, res) {
         contents: [{ role: 'user', parts: [{ text: query }] }],
         systemInstruction: {
           parts: [{
-            text: `আপনি একটি ইসলামিক এআই সহকারী (islamiPediaAI)। নিচে দেওয়া [প্রাসঙ্গিক তথ্যভাণ্ডার] থেকে প্রশ্নের সঠিক উত্তর দিন। তথ্য না পাওয়া গেলে বিনীতভাবে বলুন যে আপনার ডাটাবেজে এই তথ্যটি নেই।
+            text: `আপনি একটি ইসলামিক এআই সহকারী (islamiPediaAI)। নিচে দেওয়া [প্রাসঙ্গিক তথ্যভাণ্ডার] থেকে প্রশ্নের সঠিক উত্তর দিন। তথ্য না পাওয়া গেলে বিনীতভাবে বলুন যে আপনার ডাটাবেজে এই তথ্যটি নেই।
 
             [প্রাসঙ্গিক তথ্যভাণ্ডার]:
-            ${contextData || "কোনো প্রাসঙ্গিক তথ্য পাওয়া যায়নি।"}`
+            ${contextData || "কোনো প্রাসঙ্গিক তথ্য পাওয়া যায়নি।"}`
           }]
         }
       })
     });
 
     const geminiData = await geminiRes.json();
-    const answer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "উত্তর তৈরি করা সম্ভব হয়নি।";
+
+    if (!geminiRes.ok) {
+      console.error("Gemini generateContent error:", JSON.stringify(geminiData));
+    }
+
+    const answer = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "উত্তর তৈরি করা সম্ভব হয়নি।";
 
     return res.status(200).json({ answer });
 
   } catch (error) {
     console.error("RAG Error:", error);
-    return res.status(500).json({ error: error.message || "সার্ভারে সমস্যা হয়েছে।" });
+    return res.status(500).json({ error: error.message || "সার্ভারে সমস্যা হয়েছে।" });
   }
 }
