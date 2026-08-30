@@ -15,9 +15,7 @@ jobs:
 
       - name: Delete everything except index.html
         run: |
-          # root er shob file/folder list korbo index.html bad diye
-          shopt -s extglob
-          rm -rf!\(index.html\|.git\|.github\)
+          find. -mindepth 1 -maxdepth 1! -name 'index.html'! -name '.git'! -name '.github' -exec rm -rf {} +
           ls -la
 
       - name: Commit and push changes
