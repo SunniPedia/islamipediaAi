@@ -1,31 +1,28 @@
-name: Delete all except index.html
+name: Upload Data to Supabase
 
 on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
+  workflow_dispatch: # মোবাইল থেকে এক ক্লিকে রান করার জন্য
 
 jobs:
-  clean:
+  upload:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Delete everything except index.html
-        run: |
-          find . -mindepth 1 -maxdepth 1 ! -name 'index.html' ! -name '.git' ! -name '.github' -exec rm -rf {} +
-          ls -la
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-      - name: Commit and push changes
+      - name: Install Dependencies
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --staged --quiet; then
-            echo "Delete korar moto kichu nai"
-          else
-            git commit -m "Deleted all files except index.html"
-            git push
-          fi
+          npm init -y
+          npm install @supabase/supabase-js @google/generative-ai
+
+      - name: Run Upload Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node scripts/upload.js
