@@ -54,7 +54,7 @@ jobs:
             try {
               console.log("ডাটা ফাইল পড়া শুরু হচ্ছে...");
 
-              const filePath = "data/your_file.txt";
+              const filePath = "data/your_text.txt";
 
               if (!fs.existsSync(filePath)) {
                 throw new Error(`ফাইল পাওয়া যায়নি: ${filePath}`);
